@@ -1,0 +1,37 @@
+[project]
+name = "bax-claude-code-agent"
+version = "0.2.0"
+description = "Агент, который даёт управлять Claude Code с телефона через Бакса"
+requires-python = ">=3.11"
+dependencies = [
+    "claude-agent-sdk>=0.2.157,<0.3",
+    "websockets>=15.0",
+]
+
+[project.scripts]
+bax-agent = "bax_agent.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Имя пакета не совпадает с именем проекта — показываем сборщику, что паковать
+[tool.hatch.build.targets.wheel]
+packages = ["bax_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

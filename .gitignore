@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.log
+*.sqlite3
+.DS_Store
+.secret
+config.toml
+# ключи агентов и id установки — рядом с конфигом, в git им не место
+agents.json
+.install
+.pytest_cache/
+.ruff_cache/
