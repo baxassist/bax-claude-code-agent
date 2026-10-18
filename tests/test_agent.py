@@ -187,3 +187,41 @@ def test_rules_are_narrow():
     # сеть — по домену
     web = rules.rule_for("WebFetch", {"url": "https://docs.python.org/3/library/"})
     assert web.content == "domain:docs.python.org"
+
+
+async def test_current_client_receives_capabilities_and_correlated_acceptance(running, bax):
+    import uuid
+
+    caps = await bax.wait("caps")
+    assert "run" in caps["supports"] and caps["idempotent_run"] is False
+    await bax.wait("status")
+    rid = str(uuid.uuid4())
+    parent = "00-11111111111111111111111111111111-2222222222222222-01"
+    await bax.send("run", agent=AGENT_ID, text="  exact input  ", rid=rid, traceparent=parent)
+    frames = await bax.collect(until="done")
+    accepted = next(f for f in frames if f["type"] == "message" and f.get("kind") == "user")
+    assert accepted["rid"] == rid and accepted["accepted_text"] == "  exact input  "
+    assert accepted["traceparent"] == parent
+
+
+async def test_run_without_uuid_is_rejected_before_native_execution(running, bax):
+    await bax.wait("status")
+    for rid in [None, "old-client-id", 42]:
+        await bax.send("run", agent=AGENT_ID, text="must not execute", rid=rid)
+        failure = await bax.wait("error")
+        assert failure["code"] == "validation_error" and failure["delivery"] == "rejected"
+        assert failure["rid"] == rid and failure["operation"] == "run"
+    assert running.agents[AGENT_ID].state == "ready"
+
+
+async def test_busy_rejection_keeps_original_command_identity(running, bax):
+    import uuid
+
+    await bax.wait("status")
+    await bax.send("run", agent=AGENT_ID, text="долго")
+    await bax.wait_status("busy")
+    rid = str(uuid.uuid4())
+    await bax.send("run", agent=AGENT_ID, text="second", rid=rid, session="original")
+    failure = await bax.wait("error")
+    assert failure["rid"] == rid and failure["session"] == "original"
+    assert failure["delivery"] == "rejected" and failure["operation"] == "run"

@@ -15,6 +15,7 @@ import websockets
 
 from . import protocol
 from .protocol import frame, parse
+from .tracing import command_context, response_fields
 
 logger = logging.getLogger("bax.link")
 
@@ -80,7 +81,7 @@ class Link:
             logger.debug("кадр %s не ушёл: нет соединения", type_)
             return
         try:
-            await ws.send(frame(type_, **fields))
+            await ws.send(frame(type_, **response_fields(fields)))
         except websockets.ConnectionClosed:
             logger.debug("кадр %s не ушёл: соединение закрылось", type_)
 
@@ -129,7 +130,8 @@ class Link:
                     if incoming.get("type") == "error" and incoming.get("code") in FATAL:
                         # сервер прервал соединение: ключ перевыпустили, агента удалили
                         raise HandshakeError(incoming["code"], incoming.get("message", ""))
-                    await on_frame(incoming)
+                    with command_context(incoming):
+                        await on_frame(incoming)
             finally:
                 self._ws = None
 

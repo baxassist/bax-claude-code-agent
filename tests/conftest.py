@@ -223,6 +223,8 @@ class FakeBax:
             await self.frames.put(frame)
 
     async def send(self, type_: str, **fields) -> None:
+        if type_ == "run":
+            fields.setdefault("rid", str(uuid.uuid4()))
         assert self._ws is not None, "агент ещё не подключился"
         await self._ws.send(protocol.frame(type_, **fields))
 

@@ -168,6 +168,10 @@ class Agent:
         Списка агентов больше нет — движок подключается ключом одного агента, и сервер
         знает, кто это, из ключа.
         """
+        await self.link.send("caps", mode="engine", idempotent_run=False,
+                             supports=["run", "cancel", "answer", "history", "sessions.list",
+                                       "session.select", "session.compact", "model.set", "effort.set",
+                                       "settings.set", "resources.get", "command", "attachments"])
         await self._status(self.state)
 
     async def _status(self, state: str) -> None:
@@ -235,7 +239,18 @@ class Agent:
         if kind == "subscribe":
             await self.subscribe()
         elif kind == "run":
-            await self.run(str(frame.get("text") or ""), frame.get("attachments") or [])
+            rid = frame.get("rid")
+            try:
+                if not isinstance(rid, str) or not isinstance(frame.get("text"), str):
+                    raise ValueError
+                uuid.UUID(rid)
+            except (ValueError, TypeError):
+                await self.link.send("error", code="validation_error", operation="run",
+                                     delivery="rejected", rid=rid, session=frame.get("session", ""),
+                                     message="Задаче нужны UUID rid и текстовая строка")
+                return
+            await self.run(frame["text"], frame.get("attachments") or [], rid=rid,
+                           requested_session=frame.get("session", ""))
         elif kind == "cancel":
             await self.cancel(str(frame.get("scope") or "turn"))
         elif kind == "answer":
@@ -286,16 +301,21 @@ class Agent:
         await self._stats()
         await self._status(self.state)
 
-    async def run(self, text: str, attachments: list[dict] | None = None) -> None:
+    async def run(self, text: str, attachments: list[dict] | None = None, *, rid: str,
+                  requested_session: str = "") -> None:
+        async def rejected(code, message, *, delivery="rejected"):
+            await self.link.send("error", code=code, message=message, rid=rid,
+                                 session=requested_session, scope="session", operation="run",
+                                 delivery=delivery)
         if not text.strip() and not attachments:
-            return await self._error("internal", "пустая задача")
+            return await rejected("validation_error", "пустая задача")
         if self.state in ("busy", "waiting"):
-            return await self._error("busy", "Поток уже занят — дождитесь ответа или нажмите «Стоп»")
+            return await rejected("busy", "Поток уже занят — дождитесь ответа или нажмите «Стоп»")
         prompt = text.strip()
         try:
             saved = self._save_attachments(attachments or [])
         except (OSError, ValueError) as error:
-            return await self._error("internal", f"вложение не сохранилось: {error}")
+            return await rejected("validation_error", f"вложение не сохранилось: {error}")
         if saved:
             # передаём путь, а не base64: Claude Code сам прочитает файл из каталога проекта
             prompt = (prompt + "\n\nПрикреплённые файлы:\n"
@@ -307,12 +327,13 @@ class Agent:
             await self.process.ask(prompt)
         except ClaudeError as error:
             self._free_slot()
-            return await self._error("internal", str(error))
+            return await rejected("internal", str(error), delivery="unknown")
         self._partial = ""
         self._streaming_id = None
         self.started_at = time.time()
         await self.link.send("message", session=self.process.session_id,
-                             id=self._next_entry(), kind="user", text=text.strip() or "(вложение)")
+                             id=self._next_entry(), kind="user", text=text.strip() or "(вложение)",
+                             accepted_text=text, rid=rid)
         await self._status("busy")
         self._watchdog = asyncio.create_task(self._watch_timeout())
 
