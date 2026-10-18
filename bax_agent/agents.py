@@ -328,6 +328,8 @@ class Agent:
         except ClaudeError as error:
             self._free_slot()
             return await rejected("internal", str(error), delivery="unknown")
+        # Квитанция относится к адресату исходной команды, даже если SDK создал новую сессию.
+        await self.link.send("error.resolved", rid=rid, session=requested_session, delivery="accepted")
         self._partial = ""
         self._streaming_id = None
         self.started_at = time.time()

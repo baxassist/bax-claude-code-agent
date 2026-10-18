@@ -202,6 +202,8 @@ async def test_current_client_receives_capabilities_and_correlated_acceptance(ru
     accepted = next(f for f in frames if f["type"] == "message" and f.get("kind") == "user")
     assert accepted["rid"] == rid and accepted["accepted_text"] == "  exact input  "
     assert accepted["traceparent"] == parent
+    receipt = next(f for f in frames if f["type"] == "error.resolved")
+    assert receipt["rid"] == rid and receipt["session"] == "" and receipt["delivery"] == "accepted"
 
 
 async def test_run_without_uuid_is_rejected_before_native_execution(running, bax):
